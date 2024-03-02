@@ -66,6 +66,8 @@ export default async function Home() {
 
 async function CrudShowcase() {
   const session = await getServerAuthSession();
+  console.log(session);
+
   if (!session?.user) return null;
 
   const latestPost = await api.post.getLatest.query();

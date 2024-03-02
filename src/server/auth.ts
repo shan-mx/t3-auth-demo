@@ -38,41 +38,42 @@ declare module "next-auth" {
  */
 export const authOptions: NextAuthOptions = {
   callbacks: {
-    session: ({ session, user }) => ({
-      ...session,
-      user: {
-        ...session.user,
-        id: user.id,
-      },
-    }),
+    jwt: ({ token, user }) => {
+      if (user) return { ...token, id: user.id }; // Save id to token as docs says: https://next-auth.js.org/configuration/callbacks
+      return token;
+    },
+    session: ({ session, token, user }) => {
+      if (user) session.user = user;
+      if (token && !session.user.id) session.user.id = token.id as string;
+      return session;
+    },
   },
   adapter: PrismaAdapter(db),
   providers: [
     CredentialsProvider({
-      // The name to display on the sign in form (e.g. "Sign in with...")
-      name: "Credentials",
-      // `credentials` is used to generate a form on the sign in page.
-      // You can specify which fields should be submitted, by adding keys to the `credentials` object.
-      // e.g. domain, username, password, 2FA token, etc.
-      // You can pass any HTML attribute to the <input> tag through the object.
       credentials: {
-        username: { label: "Username", type: "text", placeholder: "jsmith" },
-        password: { label: "Password", type: "password" },
+        phone: {},
+        verificationCode: {},
       },
-      async authorize(credentials, req) {
-        // Add logic here to look up the user from the credentials supplied
-        const user = { id: "1", name: "J Smith", email: "jsmith@example.com" };
-
+      async authorize(credentials) {
+        if (credentials?.verificationCode != "0000") return null;
+        const user = await db.user.findUnique({
+          where: {
+            phone: credentials?.phone,
+          },
+        });
         if (user) {
-          // Any object returned will be saved in `user` property of the JWT
-          console.log("User found!");
-
+          console.log("User found!", user);
           return user;
         } else {
-          // If you return null then an error will be displayed advising the user to check their details.
-          return null;
-
-          // You can also Reject this callback with an Error thus the user will be sent to the error page with the error message as a query parameter
+          const newUser = await db.user.create({
+            data: {
+              name: credentials?.phone,
+              phone: credentials?.phone,
+            },
+          });
+          if (newUser) return newUser;
+          else return null;
         }
       },
     }),
@@ -90,6 +91,11 @@ export const authOptions: NextAuthOptions = {
      * @see https://next-auth.js.org/providers/github
      */
   ],
+  session: {
+    strategy: "jwt",
+  },
+  secret: env.NEXTAUTH_SECRET,
+  // debug: env.NODE_ENV === "development",
 };
 
 /**
